@@ -9,21 +9,27 @@ const String kAssetPath = 'assets/tokyo_municipal.geojson';
 class MunicipalRow {
   final String name;
   final int vertexCount;
-
-  //=================== 変更
   final double minLat, minLng, maxLat, maxLng;
   final List<List<List<List<double>>>> polygons;
 
   //=================== 変更
-  const MunicipalRow(
+  final double centroidLat;
+  final double centroidLng;
+  int? zKey;
+
+  //=================== 変更
+  MunicipalRow(
     this.name,
     this.vertexCount, {
-    //=================== 変更
     required this.minLat,
     required this.minLng,
     required this.maxLat,
     required this.maxLng,
     required this.polygons,
+    //=================== 変更
+    required this.centroidLat,
+    required this.centroidLng,
+    this.zKey,
     //=================== 変更
   });
 }
@@ -79,7 +85,10 @@ class _HomePageState extends State<HomePage> {
               child: Text('読み込みエラー: ${snap.error}', style: const TextStyle(color: Colors.red)),
             );
           }
-          final rows = snap.data ?? const [];
+          var rows = snap.data ?? const [];
+          //=================== 変更
+          rows = _sortedByZOrder(rows);
+          //=================== 変更
           if (rows.isEmpty) {
             return const Center(child: Text('データが空です'));
           }
@@ -98,10 +107,8 @@ class _HomePageState extends State<HomePage> {
                       selected: selected,
                       onTap: () {
                         setState(() => _selected = r);
-                        //=================== 変更
                         final b = LatLngBounds(LatLng(r.minLat, r.minLng), LatLng(r.maxLat, r.maxLng));
                         _mapController.fitCamera(CameraFit.bounds(bounds: b, padding: const EdgeInsets.all(24)));
-                        //=================== 変更
                       },
                     );
                   },
@@ -117,9 +124,7 @@ class _HomePageState extends State<HomePage> {
                       urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'com.example.tokyo_list_map',
                     ),
-                    //=================== 変更
                     if (_selected != null) PolygonLayer(polygons: _toPolygons(_selected!)),
-                    //=================== 変更
                   ],
                 ),
               ),
@@ -130,7 +135,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  //=================== 変更
   List<Polygon> _toPolygons(MunicipalRow r) {
     final ps = <Polygon>[];
     for (final rings in r.polygons) {
@@ -145,13 +149,62 @@ class _HomePageState extends State<HomePage> {
           points: outer,
           holePointsList: holes.isEmpty ? null : holes,
           isFilled: true,
-          color: const Color(0x33FF0000),
-          borderColor: const Color(0xFFFF0000),
+          color: const Color(0x33000000),
+          borderColor: const Color(0x99000000),
           borderStrokeWidth: 1.5,
         ),
       );
     }
     return ps;
+  }
+
+  //=================== 変更
+  List<MunicipalRow> _sortedByZOrder(List<MunicipalRow> list) {
+    if (list.isEmpty) return list;
+    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    for (final m in list) {
+      if (m.centroidLat < minLat) minLat = m.centroidLat;
+      if (m.centroidLat > maxLat) maxLat = m.centroidLat;
+      if (m.centroidLng < minLng) minLng = m.centroidLng;
+      if (m.centroidLng > maxLng) maxLng = m.centroidLng;
+    }
+    int morton(double lat, double lng) {
+      final nx = _normalize(lng, minLng, maxLng);
+      final ny = _normalize(lat, minLat, maxLat);
+      return _mortonKey16(nx, ny);
+    }
+
+    final out = List<MunicipalRow>.from(list);
+    for (final m in out) {
+      m.zKey = morton(m.centroidLat, m.centroidLng);
+    }
+    out.sort((a, b) {
+      final ka = a.zKey ?? 0, kb = b.zKey ?? 0;
+      if (ka != kb) return ka.compareTo(kb);
+      return a.name.compareTo(b.name);
+    });
+    return out;
+  }
+
+  double _normalize(double v, double vmin, double vmax) {
+    final d = (vmax - vmin);
+    if (d == 0) return 0.5;
+    return ((v - vmin) / d).clamp(0.0, 1.0);
+  }
+
+  int _mortonKey16(double normX, double normY) {
+    int x = (normX * 65535).round();
+    int y = (normY * 65535).round();
+    return _interleave16(x) | (_interleave16(y) << 1);
+  }
+
+  int _interleave16(int n) {
+    int x = n & 0xFFFF;
+    x = (x | (x << 8)) & 0x00FF00FF;
+    x = (x | (x << 4)) & 0x0F0F0F0F;
+    x = (x | (x << 2)) & 0x33333333;
+    x = (x | (x << 1)) & 0x55555555;
+    return x;
   }
 
   //=================== 変更
@@ -184,9 +237,11 @@ Future<List<MunicipalRow>> _loadRows() async {
     final coords = geom['coordinates'];
 
     int count = 0;
-    //=================== 変更
     double? minLat, minLng, maxLat, maxLng;
     final polygons = <List<List<List<double>>>>[];
+    //=================== 変更
+    double sumLat = 0, sumLng = 0;
+    int ptCnt = 0;
     //=================== 変更
 
     void addPoint(double lng, double lat) {
@@ -195,6 +250,11 @@ Future<List<MunicipalRow>> _loadRows() async {
       maxLat = (maxLat == null) ? lat : (lat > maxLat! ? lat : maxLat);
       minLng = (minLng == null) ? lng : (lng < minLng! ? lng : minLng);
       maxLng = (maxLng == null) ? lng : (lng > maxLng! ? lng : maxLng);
+      //=================== 変更
+      sumLat += lat;
+      sumLng += lng;
+      ptCnt++;
+      //=================== 変更
     }
 
     if (type == 'Polygon') {
@@ -229,21 +289,28 @@ Future<List<MunicipalRow>> _loadRows() async {
       continue;
     }
 
+    //=================== 変更
+    final centroidLat = ptCnt == 0 ? 0.0 : (sumLat / ptCnt);
+    final centroidLng = ptCnt == 0 ? 0.0 : (sumLng / ptCnt);
+    //=================== 変更
+
     rows.add(
       MunicipalRow(
         name,
         count,
-        //=================== 変更
         minLat: minLat ?? 0,
         minLng: minLng ?? 0,
         maxLat: maxLat ?? 0,
         maxLng: maxLng ?? 0,
         polygons: polygons,
         //=================== 変更
+        centroidLat: centroidLat,
+        centroidLng: centroidLng,
+        //=================== 変更
       ),
     );
   }
 
-  rows.sort((a, b) => a.name.compareTo(b.name));
+  // ここでのソートは行わない（Z-orderで並べ替えはビルド側で実施）
   return rows;
 }
