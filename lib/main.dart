@@ -39,7 +39,7 @@ class App extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Tokyo List + Map',
+      title: 'Tokyo Municipalities',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFF5566EE)),
       home: const HomePage(),
     );
@@ -92,8 +92,9 @@ class _HomePageState extends State<HomePage> {
             return const Center(child: Text('データが空です'));
           }
 
-          //=================== 変更（島嶼を除外した「東京全体」境界）
-          final tokyoAllBounds = _boundsOfAll(rows.where((r) => !_isIsland(r.name)).toList(), fallback: rows);
+          //=================== 変更（背景＝本土のみ、全体表示も本土範囲）
+          final backgroundRows = rows.where(_isMainland).toList();
+          final mainlandBounds = _boundsOfAll(backgroundRows, fallback: rows);
           //=================== 変更
 
           return Column(
@@ -111,9 +112,11 @@ class _HomePageState extends State<HomePage> {
                           _category = '区';
                           _selected = null;
                         });
+                        //=================== 変更
                         _mapController.fitCamera(
-                          CameraFit.bounds(bounds: tokyoAllBounds, padding: const EdgeInsets.all(24)),
+                          CameraFit.bounds(bounds: mainlandBounds, padding: const EdgeInsets.all(24)),
                         );
+                        //=================== 変更
                       },
                     ),
                     _CatButton(
@@ -124,9 +127,11 @@ class _HomePageState extends State<HomePage> {
                           _category = '市';
                           _selected = null;
                         });
+                        //=================== 変更
                         _mapController.fitCamera(
-                          CameraFit.bounds(bounds: tokyoAllBounds, padding: const EdgeInsets.all(24)),
+                          CameraFit.bounds(bounds: mainlandBounds, padding: const EdgeInsets.all(24)),
                         );
+                        //=================== 変更
                       },
                     ),
                     _CatButton(
@@ -137,9 +142,11 @@ class _HomePageState extends State<HomePage> {
                           _category = '町村';
                           _selected = null;
                         });
+                        //=================== 変更
                         _mapController.fitCamera(
-                          CameraFit.bounds(bounds: tokyoAllBounds, padding: const EdgeInsets.all(24)),
+                          CameraFit.bounds(bounds: mainlandBounds, padding: const EdgeInsets.all(24)),
                         );
+                        //=================== 変更
                       },
                     ),
                   ],
@@ -167,7 +174,6 @@ class _HomePageState extends State<HomePage> {
                   },
                 ),
               ),
-              //=================== 変更（地図を下端まで：Expandedに変更）
               Expanded(
                 child: FlutterMap(
                   mapController: _mapController,
@@ -177,17 +183,18 @@ class _HomePageState extends State<HomePage> {
                       urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'com.example.tokyo_list_map',
                     ),
-                    if (rows.isNotEmpty)
+                    //=================== 変更（背景＝本土のみ）
+                    if (backgroundRows.isNotEmpty)
                       PolygonLayer(
-                        polygons: rows
+                        polygons: backgroundRows
                             .expand((r) => _toPolygonsWithColors(r, const Color(0x22000000), const Color(0x33000000)))
                             .toList(),
                       ),
+                    //=================== 変更
                     if (_selected != null) PolygonLayer(polygons: _toPolygons(_selected!)),
                   ],
                 ),
               ),
-              //=================== 変更
             ],
           );
         },
@@ -268,15 +275,15 @@ class _HomePageState extends State<HomePage> {
     return out;
   }
 
-  //=================== 変更（島嶼判定）
-  bool _isIsland(String name) {
-    const islands = ['大島町', '利島村', '新島村', '神津島村', '三宅村', '御蔵島村', '八丈町', '青ヶ島村', '小笠原村'];
-    return islands.contains(name);
+  //=================== 変更（島嶼を緯度経度で除外：本土のみを true）
+  bool _isMainland(MunicipalRow r) {
+    if (r.centroidLat < 35.0) return false; // 南の島嶼を除外
+    if (r.centroidLng > 140.5) return false; // 小笠原など東側の島嶼を除外
+    return true;
   }
 
   //=================== 変更
 
-  //=================== 変更（本土のみで境界を作成。fallbackで全域も可）
   LatLngBounds _boundsOfAll(List<MunicipalRow> list, {List<MunicipalRow>? fallback}) {
     final src = list.isNotEmpty ? list : (fallback ?? list);
     double? minLat, minLng, maxLat, maxLng;
@@ -288,8 +295,6 @@ class _HomePageState extends State<HomePage> {
     }
     return LatLngBounds(LatLng(minLat ?? 0, minLng ?? 0), LatLng(maxLat ?? 0, maxLng ?? 0));
   }
-
-  //=================== 変更
 
   double _normalize(double v, double vmin, double vmax) {
     final d = (vmax - vmin);
