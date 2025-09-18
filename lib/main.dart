@@ -6,6 +6,8 @@ import 'package:flutter/services.dart' show rootBundle;
 /// - assets/tokyo_municipal.geojson を読み込む
 /// - Feature（各自治体）の名前と「頂点数（座標点の数）」を計算して、
 ///   ListViewに「<自治体名>  <頂点数>」で表示するだけの最小アプリ。
+///
+/// ※ ステップ2最小追加：BBox と重心も算出して subtitle に表示
 
 const String kAssetPath = 'assets/tokyo_municipal.geojson';
 
@@ -13,7 +15,23 @@ const String kAssetPath = 'assets/tokyo_municipal.geojson';
 class MunicipalRow {
   final String name; // 例：杉並区
   final int vertexCount; // 頂点数（全ポリゴン・外周＋穴の点を合算）
-  const MunicipalRow(this.name, this.vertexCount);
+  // --- ここからステップ2最小追加 ---
+  final double minLat, minLng; // BBox 南西
+  final double maxLat, maxLng; // BBox 北東
+  final double centroidLat; // 重心（簡易：全頂点の平均）
+  final double centroidLng;
+
+  // --- ここまで追加 ---
+  const MunicipalRow(
+    this.name,
+    this.vertexCount, {
+    this.minLat = 0,
+    this.minLng = 0,
+    this.maxLat = 0,
+    this.maxLng = 0,
+    this.centroidLat = 0,
+    this.centroidLng = 0,
+  });
 }
 
 void main() {
@@ -73,7 +91,16 @@ class _Step1PageState extends State<Step1Page> {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final r = rows[i];
-              return ListTile(title: Text(r.name), trailing: Text(r.vertexCount.toString()));
+              return ListTile(
+                title: Text('${r.name}   ${r.vertexCount}'),
+                // --- ステップ2最小追加：BBox & 重心をサブタイトル表示 ---
+                subtitle: Text(
+                  'BBox: [${r.minLat.toStringAsFixed(5)}, ${r.minLng.toStringAsFixed(5)}]'
+                  ' - [${r.maxLat.toStringAsFixed(5)}, ${r.maxLng.toStringAsFixed(5)}]\n'
+                  'Centroid: (${r.centroidLat.toStringAsFixed(5)}, ${r.centroidLng.toStringAsFixed(5)})',
+                ),
+                isThreeLine: true,
+              );
             },
           );
         },
@@ -85,6 +112,7 @@ class _Step1PageState extends State<Step1Page> {
 /// GeoJSON を読み込み、
 /// - 自治体名（通常 N03_004）
 /// - 頂点数（Polygon / MultiPolygon の [lng,lat] 点の総数）
+/// - BBox（min/max 緯度経度）、重心（全頂点の平均）
 /// の一覧を返す。
 Future<List<MunicipalRow>> _loadRows() async {
   final text = await rootBundle.loadString(kAssetPath);
@@ -115,16 +143,39 @@ Future<List<MunicipalRow>> _loadRows() async {
     final coords = geom['coordinates'];
 
     int count = 0;
+
+    // --- ステップ2最小追加：BBox & 重心用の集計変数 ---
+    double? minLat, minLng, maxLat, maxLng;
+    double sumLat = 0, sumLng = 0;
+    int ptCnt = 0;
+    void addPoint(double lng, double lat) {
+      count++;
+      // BBox
+      minLat = (minLat == null) ? lat : (lat < minLat! ? lat : minLat);
+      maxLat = (maxLat == null) ? lat : (lat > maxLat! ? lat : maxLat);
+      minLng = (minLng == null) ? lng : (lng < minLng! ? lng : minLng);
+      maxLng = (maxLng == null) ? lng : (lng > maxLng! ? lng : maxLng);
+      // Centroid（頂点の単純平均）
+      sumLat += lat;
+      sumLng += lng;
+      ptCnt++;
+    }
+    // ----------------------------------------------------
+
     if (type == 'Polygon') {
       // [rings][points][lng/lat]
       for (final ring in (coords as List)) {
-        count += (ring as List).length;
+        for (final pt in (ring as List)) {
+          addPoint((pt[0] as num).toDouble(), (pt[1] as num).toDouble());
+        }
       }
     } else if (type == 'MultiPolygon') {
       // [polygons][rings][points][lng/lat]
       for (final poly in (coords as List)) {
         for (final ring in (poly as List)) {
-          count += (ring as List).length;
+          for (final pt in (ring as List)) {
+            addPoint((pt[0] as num).toDouble(), (pt[1] as num).toDouble());
+          }
         }
       }
     } else {
@@ -132,7 +183,21 @@ Future<List<MunicipalRow>> _loadRows() async {
       continue;
     }
 
-    rows.add(MunicipalRow(name, count));
+    final centroidLat = ptCnt == 0 ? 0.0 : (sumLat / ptCnt);
+    final centroidLng = ptCnt == 0 ? 0.0 : (sumLng / ptCnt);
+
+    rows.add(
+      MunicipalRow(
+        name,
+        count,
+        minLat: minLat ?? 0,
+        minLng: minLng ?? 0,
+        maxLat: maxLat ?? 0,
+        maxLng: maxLng ?? 0,
+        centroidLat: centroidLat,
+        centroidLng: centroidLng,
+      ),
+    );
   }
 
   // 表示順：名前昇順（必要なら別の基準に変更可）
