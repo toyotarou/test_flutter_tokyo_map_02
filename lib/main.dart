@@ -59,6 +59,11 @@ class _HomePageState extends State<HomePage> {
   final LatLng _center = const LatLng(35.6895, 139.6917);
   MunicipalRow? _selected;
 
+  //=================== 変更
+  String _category = '区';
+
+  //=================== 変更
+
   @override
   void initState() {
     super.initState();
@@ -83,19 +88,57 @@ class _HomePageState extends State<HomePage> {
           var rows = snap.data ?? const [];
           rows = _sortedByZOrder(rows);
           //=================== 変更
-          rows = _applyCategoryOrder(rows);
+          final filtered = rows.where((r) {
+            if (_category == '区') return r.name.endsWith('区');
+            if (_category == '市') return r.name.endsWith('市');
+            return !r.name.endsWith('区') && !r.name.endsWith('市');
+          }).toList();
           //=================== 変更
           if (rows.isEmpty) {
             return const Center(child: Text('データが空です'));
           }
           return Column(
             children: [
+              //=================== 変更
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    _CatButton(
+                      label: '23区',
+                      selected: _category == '区',
+                      onTap: () => setState(() {
+                        _category = '区';
+                        _selected = null;
+                      }),
+                    ),
+                    _CatButton(
+                      label: '26市',
+                      selected: _category == '市',
+                      onTap: () => setState(() {
+                        _category = '市';
+                        _selected = null;
+                      }),
+                    ),
+                    _CatButton(
+                      label: '町村',
+                      selected: _category == '町村',
+                      onTap: () => setState(() {
+                        _category = '町村';
+                        _selected = null;
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+              //=================== 変更
               Expanded(
                 child: ListView.separated(
-                  itemCount: rows.length,
+                  itemCount: filtered.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, i) {
-                    final r = rows[i];
+                    final r = filtered[i];
                     final selected = identical(_selected, r);
                     return ListTile(
                       title: Text(r.name),
@@ -120,14 +163,12 @@ class _HomePageState extends State<HomePage> {
                       urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'com.example.tokyo_list_map',
                     ),
-                    //=================== 変更（東京全体を薄黒で塗る背景レイヤ）
                     if (rows.isNotEmpty)
                       PolygonLayer(
                         polygons: rows
                             .expand((r) => _toPolygonsWithColors(r, const Color(0x22000000), const Color(0x33000000)))
                             .toList(),
                       ),
-                    //=================== 変更
                     if (_selected != null) PolygonLayer(polygons: _toPolygons(_selected!)),
                   ],
                 ),
@@ -153,8 +194,8 @@ class _HomePageState extends State<HomePage> {
           points: outer,
           holePointsList: holes.isEmpty ? null : holes,
           isFilled: true,
-          //=================== 変更（選択は薄赤）
-          color: const Color(0x55FF0000),
+          //=================== 変更
+          color: const Color(0x22FF0000),
           borderColor: const Color(0xFFFF0000),
           //=================== 変更
           borderStrokeWidth: 1.5,
@@ -164,7 +205,6 @@ class _HomePageState extends State<HomePage> {
     return ps;
   }
 
-  //=================== 変更（背景レイヤ用：色を指定して描画）
   List<Polygon> _toPolygonsWithColors(MunicipalRow r, Color fill, Color stroke) {
     final ps = <Polygon>[];
     for (final rings in r.polygons) {
@@ -187,8 +227,6 @@ class _HomePageState extends State<HomePage> {
     }
     return ps;
   }
-
-  //=================== 変更
 
   List<MunicipalRow> _sortedByZOrder(List<MunicipalRow> list) {
     if (list.isEmpty) return list;
@@ -217,27 +255,6 @@ class _HomePageState extends State<HomePage> {
     return out;
   }
 
-  //=================== 変更（リスト順を「区→市→それ以外」に）
-  List<MunicipalRow> _applyCategoryOrder(List<MunicipalRow> list) {
-    int pri(String n) {
-      if (n.endsWith('区')) return 0;
-      if (n.endsWith('市')) return 1;
-      return 2;
-    }
-
-    final out = List<MunicipalRow>.from(list);
-    out.sort((a, b) {
-      final pa = pri(a.name), pb = pri(b.name);
-      if (pa != pb) return pa.compareTo(pb);
-      final ka = a.zKey ?? 0, kb = b.zKey ?? 0;
-      if (ka != kb) return ka.compareTo(kb);
-      return a.name.compareTo(b.name);
-    });
-    return out;
-  }
-
-  //=================== 変更
-
   double _normalize(double v, double vmin, double vmax) {
     final d = (vmax - vmin);
     if (d == 0) return 0.5;
@@ -259,6 +276,30 @@ class _HomePageState extends State<HomePage> {
     return x;
   }
 }
+
+//=================== 変更
+class _CatButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CatButton({required this.label, required this.selected, required this.onTap, super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? Theme.of(context).colorScheme.primary : Colors.black54;
+    return OutlinedButton(
+      onPressed: onTap,
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: color),
+        foregroundColor: color,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      ),
+      child: Text(label),
+    );
+  }
+}
+//=================== 変更
 
 Future<List<MunicipalRow>> _loadRows() async {
   final text = await rootBundle.loadString(kAssetPath);
