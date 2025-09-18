@@ -58,11 +58,7 @@ class _HomePageState extends State<HomePage> {
   final MapController _mapController = MapController();
   final LatLng _center = const LatLng(35.6895, 139.6917);
   MunicipalRow? _selected;
-
-  //=================== 変更
   String _category = '区';
-
-  //=================== 変更
 
   @override
   void initState() {
@@ -87,19 +83,21 @@ class _HomePageState extends State<HomePage> {
           }
           var rows = snap.data ?? const [];
           rows = _sortedByZOrder(rows);
-          //=================== 変更
           final filtered = rows.where((r) {
             if (_category == '区') return r.name.endsWith('区');
             if (_category == '市') return r.name.endsWith('市');
             return !r.name.endsWith('区') && !r.name.endsWith('市');
           }).toList();
-          //=================== 変更
           if (rows.isEmpty) {
             return const Center(child: Text('データが空です'));
           }
+
+          //=================== 変更
+          final tokyoAllBounds = _boundsOfAll(rows);
+          //=================== 変更
+
           return Column(
             children: [
-              //=================== 変更
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
                 child: Wrap(
@@ -108,43 +106,66 @@ class _HomePageState extends State<HomePage> {
                     _CatButton(
                       label: '23区',
                       selected: _category == '区',
-                      onTap: () => setState(() {
-                        _category = '区';
-                        _selected = null;
-                      }),
+                      onTap: () {
+                        setState(() {
+                          _category = '区';
+                          _selected = null;
+                        });
+                        //=================== 変更
+                        _mapController.fitCamera(
+                          CameraFit.bounds(bounds: tokyoAllBounds, padding: const EdgeInsets.all(24)),
+                        );
+                        //=================== 変更
+                      },
                     ),
                     _CatButton(
                       label: '26市',
                       selected: _category == '市',
-                      onTap: () => setState(() {
-                        _category = '市';
-                        _selected = null;
-                      }),
+                      onTap: () {
+                        setState(() {
+                          _category = '市';
+                          _selected = null;
+                        });
+                        //=================== 変更
+                        _mapController.fitCamera(
+                          CameraFit.bounds(bounds: tokyoAllBounds, padding: const EdgeInsets.all(24)),
+                        );
+                        //=================== 変更
+                      },
                     ),
                     _CatButton(
                       label: '町村',
                       selected: _category == '町村',
-                      onTap: () => setState(() {
-                        _category = '町村';
-                        _selected = null;
-                      }),
+                      onTap: () {
+                        setState(() {
+                          _category = '町村';
+                          _selected = null;
+                        });
+                        //=================== 変更
+                        _mapController.fitCamera(
+                          CameraFit.bounds(bounds: tokyoAllBounds, padding: const EdgeInsets.all(24)),
+                        );
+                        //=================== 変更
+                      },
                     ),
                   ],
                 ),
               ),
               //=================== 変更
-              Expanded(
+              SizedBox(
+                height: 56,
                 child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  scrollDirection: Axis.horizontal,
                   itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
                   itemBuilder: (context, i) {
                     final r = filtered[i];
                     final selected = identical(_selected, r);
-                    return ListTile(
-                      title: Text(r.name),
-                      trailing: Text(r.vertexCount.toString()),
+                    return ChoiceChip(
                       selected: selected,
-                      onTap: () {
+                      label: Text(r.name),
+                      onSelected: (_) {
                         setState(() => _selected = r);
                         final b = LatLngBounds(LatLng(r.minLat, r.minLng), LatLng(r.maxLat, r.maxLng));
                         _mapController.fitCamera(CameraFit.bounds(bounds: b, padding: const EdgeInsets.all(24)));
@@ -153,6 +174,7 @@ class _HomePageState extends State<HomePage> {
                   },
                 ),
               ),
+              //=================== 変更
               SizedBox(
                 height: 320,
                 child: FlutterMap(
@@ -194,10 +216,8 @@ class _HomePageState extends State<HomePage> {
           points: outer,
           holePointsList: holes.isEmpty ? null : holes,
           isFilled: true,
-          //=================== 変更
           color: const Color(0x22FF0000),
           borderColor: const Color(0xFFFF0000),
-          //=================== 変更
           borderStrokeWidth: 1.5,
         ),
       );
@@ -255,6 +275,20 @@ class _HomePageState extends State<HomePage> {
     return out;
   }
 
+  //=================== 変更
+  LatLngBounds _boundsOfAll(List<MunicipalRow> list) {
+    double? minLat, minLng, maxLat, maxLng;
+    for (final r in list) {
+      minLat = (minLat == null) ? r.minLat : (r.minLat < minLat! ? r.minLat : minLat);
+      maxLat = (maxLat == null) ? r.maxLat : (r.maxLat > maxLat! ? r.maxLat : maxLat);
+      minLng = (minLng == null) ? r.minLng : (r.minLng < minLng! ? r.minLng : minLng);
+      maxLng = (maxLng == null) ? r.maxLng : (r.maxLng > maxLng! ? r.maxLng : maxLng);
+    }
+    return LatLngBounds(LatLng(minLat ?? 0, minLng ?? 0), LatLng(maxLat ?? 0, maxLng ?? 0));
+  }
+
+  //=================== 変更
+
   double _normalize(double v, double vmin, double vmax) {
     final d = (vmax - vmin);
     if (d == 0) return 0.5;
@@ -277,7 +311,6 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-//=================== 変更
 class _CatButton extends StatelessWidget {
   final String label;
   final bool selected;
@@ -299,7 +332,6 @@ class _CatButton extends StatelessWidget {
     );
   }
 }
-//=================== 変更
 
 Future<List<MunicipalRow>> _loadRows() async {
   final text = await rootBundle.loadString(kAssetPath);
