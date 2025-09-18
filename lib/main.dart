@@ -92,10 +92,8 @@ class _HomePageState extends State<HomePage> {
             return const Center(child: Text('データが空です'));
           }
 
-          //=================== 変更（背景＝本土のみ、全体表示も本土範囲）
           final backgroundRows = rows.where(_isMainland).toList();
           final mainlandBounds = _boundsOfAll(backgroundRows, fallback: rows);
-          //=================== 変更
 
           return Column(
             children: [
@@ -112,11 +110,9 @@ class _HomePageState extends State<HomePage> {
                           _category = '区';
                           _selected = null;
                         });
-                        //=================== 変更
                         _mapController.fitCamera(
                           CameraFit.bounds(bounds: mainlandBounds, padding: const EdgeInsets.all(24)),
                         );
-                        //=================== 変更
                       },
                     ),
                     _CatButton(
@@ -127,11 +123,9 @@ class _HomePageState extends State<HomePage> {
                           _category = '市';
                           _selected = null;
                         });
-                        //=================== 変更
                         _mapController.fitCamera(
                           CameraFit.bounds(bounds: mainlandBounds, padding: const EdgeInsets.all(24)),
                         );
-                        //=================== 変更
                       },
                     ),
                     _CatButton(
@@ -142,11 +136,9 @@ class _HomePageState extends State<HomePage> {
                           _category = '町村';
                           _selected = null;
                         });
-                        //=================== 変更
                         _mapController.fitCamera(
                           CameraFit.bounds(bounds: mainlandBounds, padding: const EdgeInsets.all(24)),
                         );
-                        //=================== 変更
                       },
                     ),
                   ],
@@ -183,15 +175,89 @@ class _HomePageState extends State<HomePage> {
                       urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'com.example.tokyo_list_map',
                     ),
-                    //=================== 変更（背景＝本土のみ）
                     if (backgroundRows.isNotEmpty)
                       PolygonLayer(
                         polygons: backgroundRows
                             .expand((r) => _toPolygonsWithColors(r, const Color(0x22000000), const Color(0x33000000)))
                             .toList(),
                       ),
-                    //=================== 変更
                     if (_selected != null) PolygonLayer(polygons: _toPolygons(_selected!)),
+                    if (_selected != null)
+                      MarkerLayer(
+                        markers:
+                            _stationsIn(_selected!).map((s) {
+                                return Marker(
+                                  point: LatLng(s.lat, s.lng),
+                                  //=================== 変更
+                                  width: 168,
+                                  height: 52,
+                                  //=================== 変更
+                                  alignment: Alignment.topCenter,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.92),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: Colors.black26),
+                                        ),
+                                        child: const DefaultTextStyle(
+                                          style: TextStyle(fontSize: 11, color: Colors.black),
+                                          child: Text('', maxLines: 1),
+                                        ),
+                                      ),
+                                      //=================== 変更
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Container(
+                                          width: 6,
+                                          height: 6,
+                                          decoration: const BoxDecoration(color: Colors.black, shape: BoxShape.circle),
+                                        ),
+                                      ),
+                                      //=================== 変更
+                                    ],
+                                  ),
+                                );
+                              }).toList()
+                              // ラベルは上の DefaultTextStyle を再利用して描く
+                              ..asMap().forEach((i, m) {
+                                // これはダミー。実際の駅名は別マーカーとして重ねる
+                              }),
+                      ),
+                    if (_selected != null)
+                      MarkerLayer(
+                        markers: _stationsIn(_selected!).map((s) {
+                          return Marker(
+                            point: LatLng(s.lat, s.lng),
+                            width: 168,
+                            height: 52,
+                            alignment: Alignment.topCenter,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.92),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.black26),
+                                  ),
+                                  child: Text(s.name, style: const TextStyle(fontSize: 11)),
+                                ),
+                                const SizedBox(height: 2),
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: const BoxDecoration(color: Colors.black, shape: BoxShape.circle),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
                   ],
                 ),
               ),
@@ -275,14 +341,11 @@ class _HomePageState extends State<HomePage> {
     return out;
   }
 
-  //=================== 変更（島嶼を緯度経度で除外：本土のみを true）
   bool _isMainland(MunicipalRow r) {
-    if (r.centroidLat < 35.0) return false; // 南の島嶼を除外
-    if (r.centroidLng > 140.5) return false; // 小笠原など東側の島嶼を除外
+    if (r.centroidLat < 35.0) return false;
+    if (r.centroidLng > 140.5) return false;
     return true;
   }
-
-  //=================== 変更
 
   LatLngBounds _boundsOfAll(List<MunicipalRow> list, {List<MunicipalRow>? fallback}) {
     final src = list.isNotEmpty ? list : (fallback ?? list);
@@ -316,6 +379,73 @@ class _HomePageState extends State<HomePage> {
     x = (x | (x << 1)) & 0x55555555;
     return x;
   }
+
+  static const List<_Station> _yamanote = [
+    _Station('東京', 35.68124, 139.76712),
+    _Station('有楽町', 35.67507, 139.76333),
+    _Station('新橋', 35.66629, 139.75865),
+    _Station('浜松町', 35.65539, 139.75795),
+    _Station('田町', 35.64574, 139.74758),
+    _Station('高輪ゲートウェイ', 35.63594, 139.74044),
+    _Station('品川', 35.62847, 139.73876),
+    _Station('大崎', 35.61970, 139.72853),
+    _Station('五反田', 35.62648, 139.72316),
+    _Station('目黒', 35.63395, 139.71541),
+    _Station('恵比寿', 35.64669, 139.71010),
+    _Station('渋谷', 35.65803, 139.70164),
+    _Station('原宿', 35.67016, 139.70268),
+    _Station('代々木', 35.68306, 139.70204),
+    _Station('新宿', 35.69092, 139.70026),
+    _Station('新大久保', 35.70130, 139.70045),
+    _Station('高田馬場', 35.71227, 139.70363),
+    _Station('目白', 35.72129, 139.70663),
+    _Station('池袋', 35.72892, 139.71004),
+    _Station('大塚', 35.73167, 139.72935),
+    _Station('巣鴨', 35.73344, 139.73938),
+    _Station('駒込', 35.73656, 139.74696),
+    _Station('田端', 35.73810, 139.76158),
+    _Station('西日暮里', 35.73283, 139.76684),
+    _Station('日暮里', 35.72785, 139.77033),
+    _Station('鶯谷', 35.72027, 139.77764),
+    _Station('上野', 35.71377, 139.77727),
+    _Station('御徒町', 35.70726, 139.77450),
+    _Station('秋葉原', 35.69847, 139.77313),
+    _Station('神田', 35.69166, 139.77088),
+  ];
+
+  List<_Station> _stationsIn(MunicipalRow r) {
+    return _yamanote.where((s) => _pointInMunicipality(s.lat, s.lng, r)).toList();
+  }
+
+  bool _pointInMunicipality(double lat, double lng, MunicipalRow r) {
+    for (final rings in r.polygons) {
+      if (rings.isEmpty) continue;
+      final outer = rings.first;
+      if (_pointInRing(lat, lng, outer)) {
+        bool inHole = false;
+        for (int i = 1; i < rings.length; i++) {
+          if (_pointInRing(lat, lng, rings[i])) {
+            inHole = true;
+            break;
+          }
+        }
+        if (!inHole) return true;
+      }
+    }
+    return false;
+  }
+
+  bool _pointInRing(double lat, double lng, List<List<double>> ring) {
+    bool inside = false;
+    for (int i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      final xi = ring[i][1], yi = ring[i][0];
+      final xj = ring[j][1], yj = ring[j][0];
+      final intersect =
+          ((xi > lat) != (xj > lat)) && (lng < (yj - yi) * (lat - xi) / ((xj - xi) == 0 ? 1e-12 : (xj - xi)) + yi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
 }
 
 class _CatButton extends StatelessWidget {
@@ -338,6 +468,14 @@ class _CatButton extends StatelessWidget {
       child: Text(label),
     );
   }
+}
+
+class _Station {
+  final String name;
+  final double lat;
+  final double lng;
+
+  const _Station(this.name, this.lat, this.lng);
 }
 
 Future<List<MunicipalRow>> _loadRows() async {
