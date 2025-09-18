@@ -11,13 +11,10 @@ class MunicipalRow {
   final int vertexCount;
   final double minLat, minLng, maxLat, maxLng;
   final List<List<List<List<double>>>> polygons;
-
-  //=================== 変更
   final double centroidLat;
   final double centroidLng;
   int? zKey;
 
-  //=================== 変更
   MunicipalRow(
     this.name,
     this.vertexCount, {
@@ -26,11 +23,9 @@ class MunicipalRow {
     required this.maxLat,
     required this.maxLng,
     required this.polygons,
-    //=================== 変更
     required this.centroidLat,
     required this.centroidLng,
     this.zKey,
-    //=================== 変更
   });
 }
 
@@ -86,8 +81,9 @@ class _HomePageState extends State<HomePage> {
             );
           }
           var rows = snap.data ?? const [];
-          //=================== 変更
           rows = _sortedByZOrder(rows);
+          //=================== 変更
+          rows = _applyCategoryOrder(rows);
           //=================== 変更
           if (rows.isEmpty) {
             return const Center(child: Text('データが空です'));
@@ -124,6 +120,14 @@ class _HomePageState extends State<HomePage> {
                       urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'com.example.tokyo_list_map',
                     ),
+                    //=================== 変更（東京全体を薄黒で塗る背景レイヤ）
+                    if (rows.isNotEmpty)
+                      PolygonLayer(
+                        polygons: rows
+                            .expand((r) => _toPolygonsWithColors(r, const Color(0x22000000), const Color(0x33000000)))
+                            .toList(),
+                      ),
+                    //=================== 変更
                     if (_selected != null) PolygonLayer(polygons: _toPolygons(_selected!)),
                   ],
                 ),
@@ -149,8 +153,10 @@ class _HomePageState extends State<HomePage> {
           points: outer,
           holePointsList: holes.isEmpty ? null : holes,
           isFilled: true,
-          color: const Color(0x33000000),
-          borderColor: const Color(0x99000000),
+          //=================== 変更（選択は薄赤）
+          color: const Color(0x55FF0000),
+          borderColor: const Color(0xFFFF0000),
+          //=================== 変更
           borderStrokeWidth: 1.5,
         ),
       );
@@ -158,7 +164,32 @@ class _HomePageState extends State<HomePage> {
     return ps;
   }
 
+  //=================== 変更（背景レイヤ用：色を指定して描画）
+  List<Polygon> _toPolygonsWithColors(MunicipalRow r, Color fill, Color stroke) {
+    final ps = <Polygon>[];
+    for (final rings in r.polygons) {
+      if (rings.isEmpty) continue;
+      final outer = rings.first.map((p) => LatLng(p[1], p[0])).toList();
+      final holes = <List<LatLng>>[];
+      for (int i = 1; i < rings.length; i++) {
+        holes.add(rings[i].map((p) => LatLng(p[1], p[0])).toList());
+      }
+      ps.add(
+        Polygon(
+          points: outer,
+          holePointsList: holes.isEmpty ? null : holes,
+          isFilled: true,
+          color: fill,
+          borderColor: stroke,
+          borderStrokeWidth: 1.0,
+        ),
+      );
+    }
+    return ps;
+  }
+
   //=================== 変更
+
   List<MunicipalRow> _sortedByZOrder(List<MunicipalRow> list) {
     if (list.isEmpty) return list;
     double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
@@ -186,6 +217,27 @@ class _HomePageState extends State<HomePage> {
     return out;
   }
 
+  //=================== 変更（リスト順を「区→市→それ以外」に）
+  List<MunicipalRow> _applyCategoryOrder(List<MunicipalRow> list) {
+    int pri(String n) {
+      if (n.endsWith('区')) return 0;
+      if (n.endsWith('市')) return 1;
+      return 2;
+    }
+
+    final out = List<MunicipalRow>.from(list);
+    out.sort((a, b) {
+      final pa = pri(a.name), pb = pri(b.name);
+      if (pa != pb) return pa.compareTo(pb);
+      final ka = a.zKey ?? 0, kb = b.zKey ?? 0;
+      if (ka != kb) return ka.compareTo(kb);
+      return a.name.compareTo(b.name);
+    });
+    return out;
+  }
+
+  //=================== 変更
+
   double _normalize(double v, double vmin, double vmax) {
     final d = (vmax - vmin);
     if (d == 0) return 0.5;
@@ -206,8 +258,6 @@ class _HomePageState extends State<HomePage> {
     x = (x | (x << 1)) & 0x55555555;
     return x;
   }
-
-  //=================== 変更
 }
 
 Future<List<MunicipalRow>> _loadRows() async {
@@ -239,10 +289,8 @@ Future<List<MunicipalRow>> _loadRows() async {
     int count = 0;
     double? minLat, minLng, maxLat, maxLng;
     final polygons = <List<List<List<double>>>>[];
-    //=================== 変更
     double sumLat = 0, sumLng = 0;
     int ptCnt = 0;
-    //=================== 変更
 
     void addPoint(double lng, double lat) {
       count++;
@@ -250,11 +298,9 @@ Future<List<MunicipalRow>> _loadRows() async {
       maxLat = (maxLat == null) ? lat : (lat > maxLat! ? lat : maxLat);
       minLng = (minLng == null) ? lng : (lng < minLng! ? lng : minLng);
       maxLng = (maxLng == null) ? lng : (lng > maxLng! ? lng : maxLng);
-      //=================== 変更
       sumLat += lat;
       sumLng += lng;
       ptCnt++;
-      //=================== 変更
     }
 
     if (type == 'Polygon') {
@@ -289,10 +335,8 @@ Future<List<MunicipalRow>> _loadRows() async {
       continue;
     }
 
-    //=================== 変更
     final centroidLat = ptCnt == 0 ? 0.0 : (sumLat / ptCnt);
     final centroidLng = ptCnt == 0 ? 0.0 : (sumLng / ptCnt);
-    //=================== 変更
 
     rows.add(
       MunicipalRow(
@@ -303,14 +347,11 @@ Future<List<MunicipalRow>> _loadRows() async {
         maxLat: maxLat ?? 0,
         maxLng: maxLng ?? 0,
         polygons: polygons,
-        //=================== 変更
         centroidLat: centroidLat,
         centroidLng: centroidLng,
-        //=================== 変更
       ),
     );
   }
 
-  // ここでのソートは行わない（Z-orderで並べ替えはビルド側で実施）
   return rows;
 }
