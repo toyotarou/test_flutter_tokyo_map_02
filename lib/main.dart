@@ -2,64 +2,58 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
-/// ステップ1：
+// ★ 追加
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
+/// ステップ3：
 /// - assets/tokyo_municipal.geojson を読み込む
-/// - Feature（各自治体）の名前と「頂点数（座標点の数）」を計算して、
-///   ListViewに「<自治体名>  <頂点数>」で表示するだけの最小アプリ。
-///
-/// ※ ステップ2最小追加：BBox と重心も算出して subtitle に表示
+/// - リスト表示（自治体名 + 頂点数）
+/// - リストの行をタップすると、下部の地図にその自治体のBBoxを薄赤で描画
 
 const String kAssetPath = 'assets/tokyo_municipal.geojson';
 
 /// 表示用モデル
 class MunicipalRow {
   final String name; // 例：杉並区
-  final int vertexCount; // 頂点数（全ポリゴン・外周＋穴の点を合算）
-  // --- ここからステップ2最小追加 ---
-  final double minLat, minLng; // BBox 南西
-  final double maxLat, maxLng; // BBox 北東
-  final double centroidLat; // 重心（簡易：全頂点の平均）
-  final double centroidLng;
+  final int vertexCount; // 頂点数
+  // ★ 追加: BBox
+  final double minLat, minLng, maxLat, maxLng;
 
-  // --- ここまで追加 ---
-  const MunicipalRow(
-    this.name,
-    this.vertexCount, {
-    this.minLat = 0,
-    this.minLng = 0,
-    this.maxLat = 0,
-    this.maxLng = 0,
-    this.centroidLat = 0,
-    this.centroidLng = 0,
-  });
+  const MunicipalRow(this.name, this.vertexCount, {this.minLat = 0, this.minLng = 0, this.maxLat = 0, this.maxLng = 0});
 }
 
 void main() {
-  runApp(const Step1App());
+  runApp(const Step3App());
 }
 
-class Step1App extends StatelessWidget {
-  const Step1App({super.key});
+class Step3App extends StatelessWidget {
+  const Step3App({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Step1: List Tokyo Municipalities',
+      title: 'Step3: List + Map BBox',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFF5566EE)),
-      home: const Step1Page(),
+      home: const Step3Page(),
     );
   }
 }
 
-class Step1Page extends StatefulWidget {
-  const Step1Page({super.key});
+class Step3Page extends StatefulWidget {
+  const Step3Page({super.key});
 
   @override
-  State<Step1Page> createState() => _Step1PageState();
+  State<Step3Page> createState() => _Step3PageState();
 }
 
-class _Step1PageState extends State<Step1Page> {
+class _Step3PageState extends State<Step3Page> {
   late Future<List<MunicipalRow>> _future;
+
+  // ★ 追加: 地図用の状態
+  final MapController _mapController = MapController();
+  final LatLng _center = const LatLng(35.6895, 139.6917); // 都庁あたり
+  MunicipalRow? _selected; // 選択中
 
   @override
   void initState() {
@@ -70,7 +64,7 @@ class _Step1PageState extends State<Step1Page> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('ステップ1：GeoJSON→リスト表示')),
+      appBar: AppBar(title: const Text('ステップ3：リスト + 地図にBBox描画')),
       body: FutureBuilder<List<MunicipalRow>>(
         future: _future,
         builder: (context, snap) {
@@ -86,39 +80,79 @@ class _Step1PageState extends State<Step1Page> {
           if (rows.isEmpty) {
             return const Center(child: Text('データが空です'));
           }
-          return ListView.separated(
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, i) {
-              final r = rows[i];
-              return ListTile(
-                title: Text('${r.name}   ${r.vertexCount}'),
-                // --- ステップ2最小追加：BBox & 重心をサブタイトル表示 ---
-                subtitle: Text(
-                  'BBox: [${r.minLat.toStringAsFixed(5)}, ${r.minLng.toStringAsFixed(5)}]'
-                  ' - [${r.maxLat.toStringAsFixed(5)}, ${r.maxLng.toStringAsFixed(5)}]\n'
-                  'Centroid: (${r.centroidLat.toStringAsFixed(5)}, ${r.centroidLng.toStringAsFixed(5)})',
+
+          return Column(
+            children: [
+              // ---- リスト（上）----
+              Expanded(
+                child: ListView.separated(
+                  itemCount: rows.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    final r = rows[i];
+                    final selected = identical(_selected, r);
+                    return ListTile(
+                      title: Text(r.name),
+                      trailing: Text(r.vertexCount.toString()),
+                      selected: selected,
+                      onTap: () => setState(() => _selected = r), // ★ タップで選択
+                    );
+                  },
                 ),
-                isThreeLine: true,
-              );
-            },
+              ),
+              // ---- 地図（下）----
+              SizedBox(
+                height: 260,
+                child: FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(initialCenter: _center, initialZoom: 10),
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.step3_bbox_preview',
+                    ),
+                    // ★ 選択されたBBoxを描画
+                    if (_selected != null)
+                      PolygonLayer(
+                        polygons: [
+                          Polygon(
+                            points: _bboxToPolygon(_selected!),
+                            isFilled: true,
+                            color: const Color(0x33FF0000),
+                            borderColor: const Color(0xFFFF0000),
+                            borderStrokeWidth: 1.5,
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ],
           );
         },
       ),
     );
   }
+
+  // ★ BBox → ポリゴン化
+  List<LatLng> _bboxToPolygon(MunicipalRow r) {
+    return [
+      LatLng(r.minLat, r.minLng),
+      LatLng(r.minLat, r.maxLng),
+      LatLng(r.maxLat, r.maxLng),
+      LatLng(r.maxLat, r.minLng),
+    ];
+  }
 }
 
 /// GeoJSON を読み込み、
-/// - 自治体名（通常 N03_004）
-/// - 頂点数（Polygon / MultiPolygon の [lng,lat] 点の総数）
-/// - BBox（min/max 緯度経度）、重心（全頂点の平均）
-/// の一覧を返す。
+/// - 自治体名
+/// - 頂点数
+/// - BBox
 Future<List<MunicipalRow>> _loadRows() async {
   final text = await rootBundle.loadString(kAssetPath);
   final data = jsonDecode(text);
 
-  // FeatureCollection 前提（Feature単体でも動くようにケア）
   final List features;
   if (data['type'] == 'FeatureCollection') {
     features = (data['features'] as List);
@@ -135,7 +169,6 @@ Future<List<MunicipalRow>> _loadRows() async {
     final geom = Map<String, dynamic>.from(f['geometry'] ?? {});
     if (geom.isEmpty) continue;
 
-    // 市区町村名（通常は N03_004。なければ name を見る）
     final name = (props['N03_004'] ?? props['name'] ?? '') as String;
     if (name.isEmpty) continue;
 
@@ -143,34 +176,23 @@ Future<List<MunicipalRow>> _loadRows() async {
     final coords = geom['coordinates'];
 
     int count = 0;
-
-    // --- ステップ2最小追加：BBox & 重心用の集計変数 ---
     double? minLat, minLng, maxLat, maxLng;
-    double sumLat = 0, sumLng = 0;
-    int ptCnt = 0;
+
     void addPoint(double lng, double lat) {
       count++;
-      // BBox
       minLat = (minLat == null) ? lat : (lat < minLat! ? lat : minLat);
       maxLat = (maxLat == null) ? lat : (lat > maxLat! ? lat : maxLat);
       minLng = (minLng == null) ? lng : (lng < minLng! ? lng : minLng);
       maxLng = (maxLng == null) ? lng : (lng > maxLng! ? lng : maxLng);
-      // Centroid（頂点の単純平均）
-      sumLat += lat;
-      sumLng += lng;
-      ptCnt++;
     }
-    // ----------------------------------------------------
 
     if (type == 'Polygon') {
-      // [rings][points][lng/lat]
       for (final ring in (coords as List)) {
         for (final pt in (ring as List)) {
           addPoint((pt[0] as num).toDouble(), (pt[1] as num).toDouble());
         }
       }
     } else if (type == 'MultiPolygon') {
-      // [polygons][rings][points][lng/lat]
       for (final poly in (coords as List)) {
         for (final ring in (poly as List)) {
           for (final pt in (ring as List)) {
@@ -179,28 +201,14 @@ Future<List<MunicipalRow>> _loadRows() async {
         }
       }
     } else {
-      // Point / MultiLineString などは今回は対象外
       continue;
     }
 
-    final centroidLat = ptCnt == 0 ? 0.0 : (sumLat / ptCnt);
-    final centroidLng = ptCnt == 0 ? 0.0 : (sumLng / ptCnt);
-
     rows.add(
-      MunicipalRow(
-        name,
-        count,
-        minLat: minLat ?? 0,
-        minLng: minLng ?? 0,
-        maxLat: maxLat ?? 0,
-        maxLng: maxLng ?? 0,
-        centroidLat: centroidLat,
-        centroidLng: centroidLng,
-      ),
+      MunicipalRow(name, count, minLat: minLat ?? 0, minLng: minLng ?? 0, maxLat: maxLat ?? 0, maxLng: maxLng ?? 0),
     );
   }
 
-  // 表示順：名前昇順（必要なら別の基準に変更可）
   rows.sort((a, b) => a.name.compareTo(b.name));
   return rows;
 }
