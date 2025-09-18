@@ -92,8 +92,8 @@ class _HomePageState extends State<HomePage> {
             return const Center(child: Text('データが空です'));
           }
 
-          //=================== 変更
-          final tokyoAllBounds = _boundsOfAll(rows);
+          //=================== 変更（島嶼を除外した「東京全体」境界）
+          final tokyoAllBounds = _boundsOfAll(rows.where((r) => !_isIsland(r.name)).toList(), fallback: rows);
           //=================== 変更
 
           return Column(
@@ -111,11 +111,9 @@ class _HomePageState extends State<HomePage> {
                           _category = '区';
                           _selected = null;
                         });
-                        //=================== 変更
                         _mapController.fitCamera(
                           CameraFit.bounds(bounds: tokyoAllBounds, padding: const EdgeInsets.all(24)),
                         );
-                        //=================== 変更
                       },
                     ),
                     _CatButton(
@@ -126,11 +124,9 @@ class _HomePageState extends State<HomePage> {
                           _category = '市';
                           _selected = null;
                         });
-                        //=================== 変更
                         _mapController.fitCamera(
                           CameraFit.bounds(bounds: tokyoAllBounds, padding: const EdgeInsets.all(24)),
                         );
-                        //=================== 変更
                       },
                     ),
                     _CatButton(
@@ -141,17 +137,14 @@ class _HomePageState extends State<HomePage> {
                           _category = '町村';
                           _selected = null;
                         });
-                        //=================== 変更
                         _mapController.fitCamera(
                           CameraFit.bounds(bounds: tokyoAllBounds, padding: const EdgeInsets.all(24)),
                         );
-                        //=================== 変更
                       },
                     ),
                   ],
                 ),
               ),
-              //=================== 変更
               SizedBox(
                 height: 56,
                 child: ListView.separated(
@@ -174,9 +167,8 @@ class _HomePageState extends State<HomePage> {
                   },
                 ),
               ),
-              //=================== 変更
-              SizedBox(
-                height: 320,
+              //=================== 変更（地図を下端まで：Expandedに変更）
+              Expanded(
                 child: FlutterMap(
                   mapController: _mapController,
                   options: MapOptions(initialCenter: _center, initialZoom: 10),
@@ -195,6 +187,7 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               ),
+              //=================== 変更
             ],
           );
         },
@@ -275,10 +268,19 @@ class _HomePageState extends State<HomePage> {
     return out;
   }
 
+  //=================== 変更（島嶼判定）
+  bool _isIsland(String name) {
+    const islands = ['大島町', '利島村', '新島村', '神津島村', '三宅村', '御蔵島村', '八丈町', '青ヶ島村', '小笠原村'];
+    return islands.contains(name);
+  }
+
   //=================== 変更
-  LatLngBounds _boundsOfAll(List<MunicipalRow> list) {
+
+  //=================== 変更（本土のみで境界を作成。fallbackで全域も可）
+  LatLngBounds _boundsOfAll(List<MunicipalRow> list, {List<MunicipalRow>? fallback}) {
+    final src = list.isNotEmpty ? list : (fallback ?? list);
     double? minLat, minLng, maxLat, maxLng;
-    for (final r in list) {
+    for (final r in src) {
       minLat = (minLat == null) ? r.minLat : (r.minLat < minLat! ? r.minLat : minLat);
       maxLat = (maxLat == null) ? r.maxLat : (r.maxLat > maxLat! ? r.maxLat : maxLat);
       minLng = (minLng == null) ? r.minLng : (r.minLng < minLng! ? r.minLng : minLng);
